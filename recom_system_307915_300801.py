@@ -3,6 +3,8 @@ import argparse
 import numpy as np
 import pandas as pd
 from tqdm import tqdm 
+from sklearn.decomposition import NMF
+from math import sqrt
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description = 'MKRW 2021 Projekt 1')
@@ -13,14 +15,6 @@ def parse_arguments():
     args, unknown = parser.parse_known_args() # makes it possible to use inside interactive Python kernel
     print(f'Arguments unrecognized: {unknown}.\nReturning recognized arguments: {args}.') 
     return args
-
-def RMSE(Z, T):
-    ''' Calculate root-mean squared error between two numpy arrays of the same shape'''
-    if not (type(Z) == 'nd.array' and type(Z) == type(T)): raise TypeError('Z and T must be numpy arrays') 
-    if not Z.shape == T.shape: raise ValueError('Z.shape and T.shape must be the same')
-    
-    T_pairs = T.shape[0]*T.shape[1]
-    return np.sqrt(sum((Z - T)^2 )/T_pairs)
 
 args = parse_arguments()
 train = pd.read_csv(args.train, index_col= False)
@@ -36,12 +30,41 @@ test_users = test.userId.unique()
 all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_users)]))
 n = len(all_users) # 610
 
-train_matrix = np.zeros(shape = (n, d))
+avg_rating = np.mean(train.rating)
+Z = np.full((n,d), avg_rating)
 for row in tqdm(range(train.shape[0])):
     ''' Uwaga: Id userów są od 1 do 610 i jest ich 610 więc odejmujemy 1, a Id filmów
     jest dużo mniej niż ich max. więc zamiast id bierzemy jego numer w posortowanej liście) '''
     i = train.userId[row] - 1
     j = all_movies.index(train.movieId[row])
     k = train.rating[row]
-    train_matrix[i][j] = k
+    Z[i][j] = k
     
+    
+RMSE = 0
+for row in tqdm(range(test.shape[0])):
+    i = test.userId[row] - 1
+    j = all_movies.index(test.movieId[row])
+    k = test.rating[row]
+    RMSE = RMSE + (Z[i][j] - k)**2
+    
+RMSE = sqrt(RMSE/test.shape[0])
+print('RMSE for original matrix Z: ', RMSE)
+
+if args.alg=='NMF':
+    print('Building a model...')
+    model = NMF(n_components=10, init='random', random_state=77)
+    W = model.fit_transform(Z)
+    H = model.components_
+    Z_approx = np.dot(W,H)
+    print('Model finished.')
+
+RMSE = 0
+for row in tqdm(range(test.shape[0])):
+    i = test.userId[row] - 1
+    j = all_movies.index(test.movieId[row])
+    k = test.rating[row]
+    RMSE = RMSE + (Z_approx[i][j] - k)**2
+    
+RMSE = sqrt(RMSE/test.shape[0])
+print("RMSE for matrix Z' (Z approximated with NMF): ", RMSE)
