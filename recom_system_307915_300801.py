@@ -99,8 +99,9 @@ def train_matrix(Z):
 #train_matrix(Z_avg)
 #print('RMSE for original matrix Z: ', RMSE(Z_avg))
 
+# %% Create matrix Z_avg_user: wypełnianie średnią oceną dla danego użytkownika w zbiorze treningowym
 user_avgs = np.array(train.groupby('userId')['rating'].mean())
-Z_avg_user = np.repeat(user_avgs.reshape((1, -1)), n, axis = 0)
+Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
 train_matrix(Z_avg_user)
 print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 
@@ -116,10 +117,10 @@ print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 # %% Program
 
 if args.alg == 'NMF': 
-    test_NMF(Z_avg, r=10, comm = True)
+    test_NMF(Z_avg_user, r=10, comm = True)
 
 if args.alg == 'SVD1': 
     test_SVD1(Z_avg_user, r=10, comm = True)
 
 if args.alg == 'SVD2': 
-    test_SVD2(Z_avg, i=3, r=10, comm = True)
+    test_SVD2(Z_avg_user, i=3, r=10, comm = True)
