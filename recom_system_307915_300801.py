@@ -40,7 +40,7 @@ def fill_matrix(Z):
         Z[i][j] = k
     return
 
-# %% Algorytmy (wszystkie approx_ zwracaja macierz, a test_ wynik RMSE)
+# %% Algorytmy (wszystkie approx_ zwracaja macierz, a test_fun wynik RMSE wybranego testu)
 def approx_NMF(Z_, r = 10):
     ''' Nonnegative Matrix Factorization; Return approximated matrix;
         Z_(nd.array) original matrix
@@ -50,14 +50,6 @@ def approx_NMF(Z_, r = 10):
     H = model.components_
     return np.dot(W,H)
 
-def test_NMF(Z_, r = 10, log = False):
-    if log: print('Building a model...')
-    Z_approx = approx_NMF(Z_, r)
-    if log: print('Model finished.')
-    result = RMSE(Z_approx)
-    if log: print(f"RMSE for matrix Z' (Z approximated with NMF): {result}")
-    return result
-
 def approx_SVD1(Z_, r = 3):
     ''' Singular Value Decomposition; Return approximated matrix;
         Z_(nd.array) original matrix
@@ -65,14 +57,6 @@ def approx_SVD1(Z_, r = 3):
     U, S, VT = np.linalg.svd(Z_, full_matrices = False)
     S = np.diag(S)
     return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
-
-def test_SVD1(Z_, r = 3, log = False):
-    if log: log('Building a model...')
-    Z_approx = approx_SVD1(Z_, r)
-    if log: log('Model finished.')
-    result = RMSE(Z_approx)
-    if log: log(f"RMSE for matrix Z' (Z approximated with SVD1 with rank = {r}): {result}")
-    return result
 
 def approx_SVD2(Z_, i = 3, r = 5):
     ''' SVD with iterations; Return approximated matrix
@@ -86,9 +70,9 @@ def approx_SVD2(Z_, i = 3, r = 5):
             fill_matrix(Z_approx)
     return Z_approx
 
-def test_SVD2(Z_, i = 3, r = 5, log = False):
+def test_fun(Z_, func, log = False, **kwargs):
     if log: print('Building a model...')
-    Z_approx = approx_SVD2(Z_, i, r)
+    Z_approx = func(Z_, **kwargs)
     if log: print('Model finished.')
     result = RMSE(Z_approx)
     if log: print(f"RMSE for matrix Z' (Z approximated with SVD2 with rank = {r}, nr of iterations = {i}): {result}")
@@ -108,13 +92,13 @@ n = len(all_users) # 610
 avg_rating = np.mean(train.rating) 
 Z_avg = np.full((n,d), avg_rating)
 fill_matrix(Z_avg)
-print('RMSE for original matrix Z_avg: ', RMSE(Z_avg))
+# print('RMSE for original matrix Z_avg: ', RMSE(Z_avg))
 
 # %% Create matrix Z_avg_user: wypełnianie średnią oceną dla danego użytkownika w zbiorze treningowym
 user_avgs = np.array(train.groupby('userId')['rating'].mean())
 Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
 fill_matrix(Z_avg_user)
-print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
+# print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 
 # %% Create matrix Z_avg_movie: wypełnianie średnią oceną dla danego filmu w zbiorze treningowym
 #    i średnią wszystkich filmów dla filmów których w nim nie ma
@@ -123,7 +107,7 @@ movie_row = np.repeat(avg_rating, d)
 for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
 Z_avg_movie = np.array([movie_row]*n)
 fill_matrix(Z_avg_movie)
-print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
+# print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
 
 # %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
 
@@ -135,11 +119,12 @@ print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
 #     print(f'SVD1 - {name} - {test_SVD1(Z)}')
 #     print(f'NMF  - {name} - {test_NMF(Z)}')
 #     print(f'SVD2 - {name} - {test_SVD2(Z)}')
+print(test_fun(Z_avg, approx_NMF))
 
 # %% Program
 # Wykomentowane na czas testów
 # if args.alg == 'NMF': 
-#     test_NMF(Z_avg_user, log = T, return_matrix = Truerue)
+#     test_NMF(Z_avg_user, log = T, return_matrix = True)
 
 # if args.alg == 'SVD1': 
 #     test_SVD1(Z_avg_user, r = 3, log = True)
