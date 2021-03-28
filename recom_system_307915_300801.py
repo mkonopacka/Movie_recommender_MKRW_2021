@@ -3,7 +3,7 @@ import argparse
 import numpy as np
 import pandas as pd
 from tqdm import tqdm 
-from sklearn.decomposition import NMF
+from sklearn.decomposition import NMF, TruncatedSVD
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description = 'MKRW 2021 Projekt 1')
@@ -49,14 +49,6 @@ def approx_NMF(Z_, r = 10):
     H = model.components_
     return np.dot(W,H)
 
-def test_NMF(Z_, r = 10, log = False):
-    if log: print('Building a model...')
-    Z_approx = approx_NMF(Z_, r)
-    if log: print('Model finished.')
-    result = RMSE(Z_approx)
-    if log: print(f"RMSE for matrix Z' (Z approximated with NMF): {result}")
-    return result
-
 def approx_SVD1(Z_, r = 3):
     ''' Singular Value Decomposition; Return approximated matrix;
         Z_(nd.array) original matrix
@@ -64,14 +56,18 @@ def approx_SVD1(Z_, r = 3):
     U, S, VT = np.linalg.svd(Z_, full_matrices = False)
     S = np.diag(S)
     return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
-
-def test_SVD1(Z_, r = 3, log = False):
-    if log: log('Building a model...')
-    Z_approx = approx_SVD1(Z_, r)
-    if log: log('Model finished.')
-    result = RMSE(Z_approx)
-    if log: log(f"RMSE for matrix Z' (Z approximated with SVD1 with rank = {r}): {result}")
-    return result
+    
+def approx_SVD1_b(Z_, r = 3):
+    ''' Singular Value Decomposition; Return approximated matrix;
+        Z_(nd.array) original matrix
+        r (float) number of features'''
+    svd = TruncatedSVD(n_components = r, random_state=42)
+    svd.fit(Z_)
+    Sigma2 = np.diag(svd.singular_values_)
+    VT = svd.components_
+    W = svd.transform(Z_) / svd.singular_values_
+    H = np.dot(Sigma2, VT) 
+    return np.dot(W, H)
 
 def approx_SVD2(Z_, i = 3, r = 5):
     ''' SVD with iterations; Return approximated matrix
@@ -84,13 +80,16 @@ def approx_SVD2(Z_, i = 3, r = 5):
         if j != i-1: 
             fill_matrix(Z_approx)
     return Z_approx
-
-def test_SVD2(Z_, i = 3, r = 5, log = False):
+    
+def test_alg(Z_, alg, r = 5, i = 3, log = False):
     if log: print('Building a model...')
-    Z_approx = approx_SVD2(Z_, i, r)
+    if alg == 'NMF': Z_approx = approx_NMF(Z_, r)
+    if alg == 'SVD1': Z_approx = approx_SVD1(Z_, r)
+    if alg == 'SVD2': Z_approx = approx_SVD2(Z_, i, r)
     if log: print('Model finished.')
     result = RMSE(Z_approx)
-    if log: print(f"RMSE for matrix Z' (Z approximated with SVD2 with rank = {r}, nr of iterations = {i}): {result}")
+    if log: print(f"RMSE for matrix Z' (Z approximated with {alg} with rank = {r}): {result}")
+    if alg == 'SVD2': print('Number of iterations: ', i)
     return result
 
 # %% 
@@ -137,11 +136,14 @@ print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 
 # %% Program
 #Wykomentowane na czas testów
-if args.alg == 'NMF': 
-    test_NMF(Z_avg_user, r = 5, log = True)
+#if args.alg == 'NMF': 
+#    test_NMF(Z_avg_user, r = 5, log = True)
 
-if args.alg == 'SVD1': 
-    test_SVD1(Z_avg_user, r = 3, log = True)
+#if args.alg == 'SVD1': 
+#    test_SVD1(Z_avg_user, r = 3, log = True)
 
-if args.alg == 'SVD2': 
-    test_SVD2(Z_avg_user, i = 3, r = 10, log = True)
+#if args.alg == 'SVD2': 
+#    test_SVD2(Z_avg_user, i = 3, r = 10, log = True)
+
+if __name__=='__main__':
+    test_alg(Z_avg_user, args.alg, r = 5, i = 3, log = True)
