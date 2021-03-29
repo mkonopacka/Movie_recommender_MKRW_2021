@@ -103,7 +103,7 @@ all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_
 n = len(all_users) # 610
 
 # %% Create matrix Z_avg: wypełnianie średnim rankingiem spośród wszystkich ocenionych filmów w zbiorze treningowym
-#avg_rating = np.mean(train.rating) 
+avg_rating = np.mean(train.rating) 
 #Z_avg = np.full((n,d), avg_rating)
 #fill_matrix(Z_avg)
 #print('RMSE for original matrix Z_avg: ', RMSE(Z_avg))
@@ -116,12 +116,15 @@ print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 
 # %% Create matrix Z_avg_movie: wypełnianie średnią oceną dla danego filmu w zbiorze treningowym
 #    i średnią wszystkich filmów dla filmów których w nim nie ma
-#movie_avgs = train.groupby('movieId')['rating'].mean()
-#movie_row = np.repeat(avg_rating, d)
-#for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
-#Z_avg_movie = np.array([movie_row]*n)
-#fill_matrix(Z_avg_movie)
-#print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
+movie_avgs = train.groupby('movieId')['rating'].mean()
+movie_row = np.repeat(avg_rating, d)
+for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
+Z_avg_movie = np.array([movie_row]*n)
+fill_matrix(Z_avg_movie)
+print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
+
+Z_avg_user_movie = (2*Z_avg_user + Z_avg_movie) / 3
+print('RMSE for original matrix Z_avg_user_movie: ', RMSE(Z_avg_user_movie))
 
 # %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
 
@@ -146,4 +149,4 @@ print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 #    test_SVD2(Z_avg_user, i = 3, r = 10, log = True)
 
 if __name__=='__main__':
-    test_alg(Z_avg_user, args.alg, r = 5, i = 3, log = True)
+    test_alg(Z_avg_user_movie, args.alg, r = 10, i = 4, log = True)
