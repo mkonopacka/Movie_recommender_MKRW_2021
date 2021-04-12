@@ -1,10 +1,12 @@
-# %%
+# %% Import
 import argparse
 import numpy as np
 import pandas as pd
 from tqdm import tqdm 
 from sklearn.decomposition import NMF, TruncatedSVD
+from scipy.optimize import minimize
 
+# %% Parse arguments
 def parse_arguments():
     parser = argparse.ArgumentParser(description = 'MKRW 2021 Projekt 1')
     parser.add_argument('--train', help = 'train file', default = 'data/ratings_train.csv')
@@ -60,7 +62,8 @@ def approx_SVD1(Z_, r = 3):
 def approx_SVD1_b(Z_, r = 3):
     ''' Singular Value Decomposition; Return approximated matrix;
         Z_(nd.array) original matrix
-        r (float) number of features'''
+        r (float) number of features
+        uses sklearn'''
     svd = TruncatedSVD(n_components = r, random_state=42)
     svd.fit(Z_)
     Sigma2 = np.diag(svd.singular_values_)
@@ -92,7 +95,7 @@ def test_alg(Z_, alg, r = 5, i = 3, log = False):
     if alg == 'SVD2': print('Number of iterations: ', i)
     return result
 
-# %% 
+# %% Setup
 train_movies = train.movieId.unique()
 test_movies = test.movieId.unique()
 all_movies = sorted(np.concatenate((train_movies, test_movies[~ np.isin(test_movies, train_movies)])))
@@ -104,15 +107,15 @@ n = len(all_users) # 610
 
 # %% Create matrix Z_avg: wypełnianie średnim rankingiem spośród wszystkich ocenionych filmów w zbiorze treningowym
 avg_rating = np.mean(train.rating) 
-#Z_avg = np.full((n,d), avg_rating)
-#fill_matrix(Z_avg)
-#print('RMSE for original matrix Z_avg: ', RMSE(Z_avg))
+Z_avg = np.full((n,d), avg_rating)
+fill_matrix(Z_avg)
+print('RMSE for original matrix Z_avg: ', RMSE(Z_avg))
 
 # %% Create matrix Z_avg_user: wypełnianie średnią oceną dla danego użytkownika w zbiorze treningowym
-#user_avgs = np.array(train.groupby('userId')['rating'].mean())
-#Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
-#fill_matrix(Z_avg_user)
-#print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
+user_avgs = np.array(train.groupby('userId')['rating'].mean())
+Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
+fill_matrix(Z_avg_user)
+print('RMSE for original matrix Z_avg_user: ', RMSE(Z_avg_user))
 
 # %% Create matrix Z_avg_movie: wypełnianie średnią oceną dla danego filmu w zbiorze treningowym
 #    i średnią wszystkich filmów dla filmów których w nim nie ma
@@ -123,11 +126,13 @@ Z_avg_movie = np.array([movie_row]*n)
 fill_matrix(Z_avg_movie)
 print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
 
-#Weighted mean of Z_avg_user and Z_avg_movie.
-#Z_avg_user_movie = (2*Z_avg_user + Z_avg_movie) / 3
-#print('RMSE for original matrix Z_avg_user_movie: ', RMSE(Z_avg_user_movie))
+# %% Weighted mean of Z_avg_user and Z_avg_movie.
+p = 0.58    # optimal parameter
+Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+print('RMSE for original matrix Z_avg_user_movie: ', RMSE(Z_avg_user_movie))
 
-# Fills matrix with mean ratings of the most similar users.
+
+# %% Fills matrix with mean ratings of the most similar users.
 def close_users(Z_, percent = 0.15):
     Z_close_users = np.full((n,d), 0)
     for i in tqdm(range(n)):
@@ -142,10 +147,12 @@ def close_users(Z_, percent = 0.15):
         prediction = close_users.mean(axis=0)
         Z_close_users[i,] = prediction
     return Z_close_users
-#Z_close_users = close_users(Z_avg_user)
-#print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
 
-# Improved Z_avg_user.
+Z_close_users = close_users(Z_avg_user)
+print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
+
+
+# %% Enhanced Z_avg_user (not better)
 user_avgs = np.array(train.groupby('userId')['rating'].mean())
 Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
 Z_avg_user_0 = np.copy(Z_avg_user)
@@ -155,31 +162,35 @@ movie_corection = Z_avg_user_2.mean(axis=0)
 Z_avg_user_2 = Z_avg_user_0 + movie_corection
 print('RMSE for original matrix Z_avg_user_2: ', RMSE(Z_avg_user_2))
 
-#Z_close_users = close_users(Z_avg_user_2)
-#print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
+Z_close_users = close_users(Z_avg_user_2)
+print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
+
+
+# %% (S)GD - alpha (doesn't work)
+def vec_to_mat(x):
+    r = len(x)//(n+d)
+    W = x[0:n*r]
+    W = W.reshape((n, r))
+    H = x[n*r:r*(n+d)]
+    H = H.reshape((r, d))
+    return np.dot(W, H)
+
+def f(x):
+    return RMSE(vec_to_mat(x))
+    
+r = 10
+x0 = np.full(r*(n+d), avg_rating)
+opt = minimize(f, x0)
+opt
+Z_opt = vec_to_mat(opt.x)
+print('RMSE: ', RMSE(Z_opt))
 
 
 # %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
 
 # %% TODO Create matrix Z_avg2 średnia po filmie i po użytkowniku 2 sposoby
 
-# %% Tests
-# Zs = {'Z_avg': Z_avg,'Z_avg_movie': Z_avg_movie,'Z_avg_user': Z_avg_user}
-# for name, Z in Zs.items():
-#     print(f'SVD1 - {name} - {test_SVD1(Z)}')
-#     print(f'NMF  - {name} - {test_NMF(Z)}')
-#     print(f'SVD2 - {name} - {test_SVD2(Z)}')
 
 # %% Program
-#Wykomentowane na czas testów
-#if args.alg == 'NMF': 
-#    test_NMF(Z_avg_user, r = 5, log = True)
-
-#if args.alg == 'SVD1': 
-#    test_SVD1(Z_avg_user, r = 3, log = True)
-
-#if args.alg == 'SVD2': 
-#    test_SVD2(Z_avg_user, i = 3, r = 10, log = True)
-
 if __name__=='__main__':
-    test_alg(Z_avg_user_movie, args.alg, r = 10, i = 3, log = True)
+    test_alg(Z_avg_user_movie, args.alg, r = 15, i = 3, log = True)
