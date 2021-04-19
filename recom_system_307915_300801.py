@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm 
 from sklearn.decomposition import NMF, TruncatedSVD
-from scipy.optimize import minimize
 
 # %% Parse arguments
 def parse_arguments():
@@ -20,6 +19,7 @@ args = parse_arguments()
 train = pd.read_csv(args.train, index_col = False)
 test = pd.read_csv(args.test, index_col = False)
 
+# %% Functions using ratings.csv data
 def RMSE(Zp):
     ''' Root-mean-square error between matrix Zp and test matrix '''
     RMSE = 0
@@ -104,6 +104,7 @@ train_users = train.userId.unique()
 test_users = test.userId.unique()
 all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_users)]))
 n = len(all_users) # 610
+avg_rating = np.mean(train.rating)
 
 # %% Create matrix Z_avg: wypełnianie średnim rankingiem spośród wszystkich ocenionych filmów w zbiorze treningowym
 avg_rating = np.mean(train.rating) 
@@ -166,7 +167,13 @@ Z_close_users = close_users(Z_avg_user_2)
 print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
 
 
-# %% (S)GD - alpha (doesn't work)
+# %% SGD - setup
+Z_zero = np.full((n,d), 0)
+fill_matrix(Z_zero)
+entries = Z_zero > 0
+vec_zero = Z_zero[entries]
+
+# %% SGD
 def vec_to_mat(x):
     r = len(x)//(n+d)
     W = x[0:n*r]
@@ -175,15 +182,44 @@ def vec_to_mat(x):
     H = H.reshape((r, d))
     return np.dot(W, H)
 
-def f(x):
-    return RMSE(vec_to_mat(x))
+# how not to calculate whole W x H ?
+def loss(x):
+    WH = vec_to_mat(x)
+    vec_wh = WH[entries]
+    vec = (vec_zero - vec_wh)**2
+    return np.sum(vec)
     
-r = 10
-x0 = np.full(r*(n+d), avg_rating)
-opt = minimize(f, x0)
-opt
-Z_opt = vec_to_mat(opt.x)
-print('RMSE: ', RMSE(Z_opt))
+r = 5
+#x0 = np.full(r*(n+d), np.sqrt(avg_rating))
+x0 = np.full(r*(n+d), 0.6)
+
+# could be twice as fast by using one-sided difference
+def der_loss(x, k, h):
+    xp, xm = np.copy(x), np.copy(x)
+    xp[k] += h
+    xm[k] -= h
+    return (loss(xp) - loss(xm))/(2*h)
+            
+# batch_size should divide N=r*(n+d)
+def SGD(x0, batch_size=1, l_rate=0.1, h=0.01, n_epochs=50):
+    N = len(x0)
+    n_iter = N//batch_size
+    indexes = np.arange(N)
+    x = np.copy(x0)
+    for _ in tqdm(range(n_epochs)):
+        np.random.shuffle(indexes)
+        for i in tqdm(range(n_iter)):
+            ib = i*batch_size
+            batch_ids = indexes[ib : ib + batch_size]
+            grad = np.full(N, 0)
+            for k in batch_ids:
+                grad[k] = der_loss(x, k, h)
+            x = x - l_rate*grad
+    return x
+
+# %%
+vec = SGD(x0, batch_size=100, n_epochs=10)
+loss(vec)
 
 
 # %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
