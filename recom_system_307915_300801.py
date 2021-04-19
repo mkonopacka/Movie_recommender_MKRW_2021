@@ -41,7 +41,7 @@ def fill_matrix(Z):
         Z[i][j] = k
     return
 
-# %% Algorytmy (wszystkie approx_ zwracaja macierz, a test_ wynik RMSE)
+# %% Algorytmy (approx_ zwracaja macierz przyblizona)
 def approx_NMF(Z_, r = 10):
     ''' Nonnegative Matrix Factorization; Return approximated matrix;
         Z_(nd.array) original matrix
@@ -127,11 +127,10 @@ Z_avg_movie = np.array([movie_row]*n)
 fill_matrix(Z_avg_movie)
 print('RMSE for original matrix Z_avg_movie: ', RMSE(Z_avg_movie))
 
-# %% Weighted mean of Z_avg_user and Z_avg_movie.
+# %% Weighted mean of Z_avg_user and Z_avg_movie. NAJLEPSZA
 p = 0.58    # optimal parameter
 Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
 print('RMSE for original matrix Z_avg_user_movie: ', RMSE(Z_avg_user_movie))
-
 
 # %% Fills matrix with mean ratings of the most similar users.
 def close_users(Z_, percent = 0.15):
@@ -149,14 +148,14 @@ def close_users(Z_, percent = 0.15):
         Z_close_users[i,] = prediction
     return Z_close_users
 
-Z_close_users = close_users(Z_avg_user)
-print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
-
+# Z_close_users = close_users(Z_avg_user)
+# print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
 
 # %% Enhanced Z_avg_user (not better)
 user_avgs = np.array(train.groupby('userId')['rating'].mean())
 Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
 Z_avg_user_0 = np.copy(Z_avg_user)
+
 #fill_matrix(Z_avg_user)
 Z_avg_user_2 = Z_avg_movie - Z_avg_user_0
 movie_corection = Z_avg_user_2.mean(axis=0)
@@ -166,12 +165,12 @@ print('RMSE for original matrix Z_avg_user_2: ', RMSE(Z_avg_user_2))
 Z_close_users = close_users(Z_avg_user_2)
 print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
 
-
 # %% SGD - setup
 Z_zero = np.full((n,d), 0)
 fill_matrix(Z_zero)
-entries = Z_zero > 0
-vec_zero = Z_zero[entries]
+entries = Z_zero > 0 # indeksy niezerowych ratingow
+vec_zero = Z_zero[entries] 
+pairs = zip(*np.where(Z_zero > 0)) # zwraca krotke par i,j
 
 # %% SGD
 def vec_to_mat(x):
@@ -180,18 +179,25 @@ def vec_to_mat(x):
     W = W.reshape((n, r))
     H = x[n*r:r*(n+d)]
     H = H.reshape((r, d))
-    return np.dot(W, H)
+    return W, H
 
 # how not to calculate whole W x H ?
-def loss(x):
+def loss1(x):
     WH = vec_to_mat(x)
     vec_wh = WH[entries]
     vec = (vec_zero - vec_wh)**2
     return np.sum(vec)
-    
+
+def loss(x):
+    W,H = vec_to_mat(x)
+    sum = 0
+    for i,j in pairs:
+        sum += (Z_zero[i,j] - np.sum(W[i,:] * H[:,j]))**2  
+    return sum
+
 r = 5
 #x0 = np.full(r*(n+d), np.sqrt(avg_rating))
-x0 = np.full(r*(n+d), 0.6)
+x0 = np.full(r*(n+d), 0.8)
 
 # could be twice as fast by using one-sided difference
 def der_loss(x, k, h):
@@ -201,7 +207,7 @@ def der_loss(x, k, h):
     return (loss(xp) - loss(xm))/(2*h)
             
 # batch_size should divide N=r*(n+d)
-def SGD(x0, batch_size=1, l_rate=0.1, h=0.01, n_epochs=50):
+def SGD(x0, batch_size = 1, l_rate = 0.1, h = 0.01, n_epochs = 50):
     N = len(x0)
     n_iter = N//batch_size
     indexes = np.arange(N)
@@ -218,14 +224,13 @@ def SGD(x0, batch_size=1, l_rate=0.1, h=0.01, n_epochs=50):
     return x
 
 # %%
-vec = SGD(x0, batch_size=100, n_epochs=10)
+vec = SGD(x0, batch_size=100, n_epochs= 5)
 loss(vec)
 
-
-# %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
-
-# %% TODO Create matrix Z_avg2 średnia po filmie i po użytkowniku 2 sposoby
-
+# %%
+W,H = vec_to_mat(vec)
+Z_sgd = W @ H
+print(RMSE(Z_sgd))
 
 # %% Program
 if __name__=='__main__':
