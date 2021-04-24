@@ -50,6 +50,7 @@ def approx_NMF(Z_, r = 10):
     W = model.fit_transform(Z_)
     H = model.components_
     return np.dot(W,H)
+    #return W, H
 
 def approx_SVD1(Z_, r = 3):
     ''' Singular Value Decomposition; Return approximated matrix;
@@ -57,7 +58,8 @@ def approx_SVD1(Z_, r = 3):
         r (float) number of features'''
     U, S, VT = np.linalg.svd(Z_, full_matrices = False)
     S = np.diag(S)
-    return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
+    #return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
+    return U[:,:r], S[0:r,:r] @ VT[:r,:]
     
 def approx_SVD1_b(Z_, r = 3):
     ''' Singular Value Decomposition; Return approximated matrix;
@@ -168,19 +170,34 @@ print('RMSE for original matrix Z_close_users: ', RMSE(Z_close_users))
 
 
 # %% SGD - setup
-Z_zero = np.full((n,d), 0)
+Z_zero = np.full((n,d), 0, dtype = np.float)
 fill_matrix(Z_zero)
 entries = Z_zero > 0
 vec_zero = Z_zero[entries]
+pairs = list(zip(*np.where(entries)))
 
 # %% SGD
-def vec_to_mat(x):
-    r = len(x)//(n+d)
-    W = x[0:n*r]
+
+# 1. updatowanie funkcji loss wzgledem kolumny/wiersza
+# 2. nie wszystkie wspolzedne w jednym batchu
+# 3. pochodna po kilku wspl. na raz
+# 4. licznie pochodnej jednostronnej + wielokrotnie uzycie f(x) z pamieci
+
+def vec_to_mat0(x):
+    #r = len(x)//(n+d)
+    W = x[0 : n*r]
     W = W.reshape((n, r))
-    H = x[n*r:r*(n+d)]
+    H = x[n*r : r*(n+d)]
     H = H.reshape((r, d))
-    return np.dot(W, H)
+    return W, H
+
+def vec_to_mat(x):
+    #r = len(x)//(n+d)
+    W = x[0 : n*r]
+    W = W.reshape((n, r))
+    H = x[n*r : r*(n+d)]
+    H = H.reshape((r, d))
+    return W @ H
 
 # how not to calculate whole W x H ?
 def loss(x):
@@ -188,20 +205,50 @@ def loss(x):
     vec_wh = WH[entries]
     vec = (vec_zero - vec_wh)**2
     return np.sum(vec)
+
+def loss0(x):
+    W, H = vec_to_mat0(x)
+    s = 0
+    for i, j in pairs:
+        s += (Z_zero[i,j] - np.sum(W[i,:] * H[:,j]))**2  
+    return s
+
+def loss_batch(x, ks, h):
+    pass
     
+def loss_part(W, H, k, h):
+    s = 0
+    if k < n*r:
+        i0, j0 = k//r, (k+1) % r - 1
+        row = np.copy(W[i0,:])
+        row[j0] += h
+        for i, j in pairs:
+            if i==i0: s += (Z_zero[i,j] - np.sum(row * H[:,j]))**2
+    else:
+        k = k - n*r
+        i0, j0 = k//d, (k+1) % d - 1
+        col = np.copy(H[:,j0])
+        col[i0] += h
+        for i, j in pairs:
+            if j==j0: s += (Z_zero[i,j] - np.sum(W[i,:] * col))**2 
+    return s
+
 r = 5
 #x0 = np.full(r*(n+d), np.sqrt(avg_rating))
-x0 = np.full(r*(n+d), 0.6)
+x0 = np.full(r*(n+d), 0.825)
+
+#r = 10
+#x0 = np.full(r*(n+d), 0.6) 
 
 # could be twice as fast by using one-sided difference
-def der_loss(x, k, h):
+def der_loss(x, ks, h):
     xp, xm = np.copy(x), np.copy(x)
-    xp[k] += h
-    xm[k] -= h
+    xp[ks] += h
+    xm[ks] -= h
     return (loss(xp) - loss(xm))/(2*h)
             
 # batch_size should divide N=r*(n+d)
-def SGD(x0, batch_size=1, l_rate=0.1, h=0.01, n_epochs=50):
+def SGD0(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
     N = len(x0)
     n_iter = N//batch_size
     indexes = np.arange(N)
@@ -211,16 +258,58 @@ def SGD(x0, batch_size=1, l_rate=0.1, h=0.01, n_epochs=50):
         for i in tqdm(range(n_iter)):
             ib = i*batch_size
             batch_ids = indexes[ib : ib + batch_size]
-            grad = np.full(N, 0)
+            grad = np.full(N, 0, dtype = np.float)
             for k in batch_ids:
                 grad[k] = der_loss(x, k, h)
             x = x - l_rate*grad
     return x
 
-# %%
-vec = SGD(x0, batch_size=100, n_epochs=10)
-loss(vec)
+def SGD1(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
+    N = len(x0)
+    n_iter = N//batch_size
+    indexes = np.arange(N)
+    x = np.copy(x0)
+    for _ in tqdm(range(n_epochs)):
+        np.random.shuffle(indexes)
+        for i in tqdm(range(n_iter)):
+            ib = i*batch_size
+            batch_ids = indexes[ib : ib + batch_size]
+            grad = np.full(N, 0, dtype = np.float)
+            #lx = loss(x)
+            W, H = vec_to_mat0(x)
+            for k in batch_ids:
+                grad[k] = (loss_part(W, H, k, h) - loss_part(W, H, k, -h))/(2*h)
+            x = x - l_rate*grad
+    return x
 
+def SGD(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
+    N = len(x0)
+    n_iter = N//batch_size
+    indexes = np.arange(N)
+    x = np.copy(x0)
+    for _ in tqdm(range(n_epochs)):
+        np.random.shuffle(indexes)
+        for i in tqdm(range(n_iter)):
+            ib = i*batch_size
+            batch_ids = indexes[ib : ib + batch_size]
+            grad = np.full(N, 0, dtype = np.float)
+            grad[batch_ids] += der_loss(x, batch_ids, h)
+            x = x - (l_rate/batch_size)*grad
+    return x
+
+# %% Run SGD
+vec = np.copy(x0)
+vec = SGD(vec, batch_size=225, l_rate=0.01, n_epochs=3)
+loss(vec)
+Z_sgd = vec_to_mat(vec)
+print('RMSE for matrix Z_sgd: ', RMSE(Z_sgd))
+
+#W, H = vec_to_mat(vec)
+#Z_sgd = W @ H
+
+vec1 = np.copy(vec)
+loss(vec1)
+RMSE(vec_to_mat(vec1))
 
 # %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
 
