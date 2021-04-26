@@ -58,8 +58,8 @@ def approx_SVD1(Z_, r = 3):
         r (float) number of features'''
     U, S, VT = np.linalg.svd(Z_, full_matrices = False)
     S = np.diag(S)
-    #return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
-    return U[:,:r], S[0:r,:r] @ VT[:r,:]
+    return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
+    #return U[:,:r], S[0:r,:r] @ VT[:r,:]
     
 def approx_SVD1_b(Z_, r = 3):
     ''' Singular Value Decomposition; Return approximated matrix;
@@ -107,6 +107,11 @@ test_users = test.userId.unique()
 all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_users)]))
 n = len(all_users) # 610
 avg_rating = np.mean(train.rating)
+Z_zero = np.full((n,d), 0, dtype = np.float)
+print('Reading training data: ')
+fill_matrix(Z_zero)
+entries = Z_zero > 0
+vec_zero = Z_zero[entries]
 
 # %% Create matrix Z_avg: wypełnianie średnim rankingiem spośród wszystkich ocenionych filmów w zbiorze treningowym
 avg_rating = np.mean(train.rating) 
@@ -174,7 +179,7 @@ Z_zero = np.full((n,d), 0, dtype = np.float)
 fill_matrix(Z_zero)
 entries = Z_zero > 0
 vec_zero = Z_zero[entries]
-pairs = list(zip(*np.where(entries)))
+#pairs = list(zip(*np.where(entries)))
 
 # %% SGD
 
@@ -299,7 +304,7 @@ def SGD(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
 
 # %% Run SGD
 vec = np.copy(x0)
-vec = SGD(vec, batch_size=225, l_rate=0.01, n_epochs=3)
+vec = SGD(vec, batch_size=225, l_rate=0.02, n_epochs=1)
 loss(vec)
 Z_sgd = vec_to_mat(vec)
 print('RMSE for matrix Z_sgd: ', RMSE(Z_sgd))
@@ -310,6 +315,22 @@ print('RMSE for matrix Z_sgd: ', RMSE(Z_sgd))
 vec1 = np.copy(vec)
 loss(vec1)
 RMSE(vec_to_mat(vec1))
+
+W, H = approx_SVD1(Z_avg_user_movie, r=5)
+Z_svd = W @ H
+fill_matrix(Z_svd)
+W, H = approx_SVD1(Z_svd, r=5)
+vW, vH = W.flatten(), H.flatten()
+vec_svd = np.concatenate((vW, vH))
+loss(vec_svd)
+RMSE(vec_to_mat(vec_svd))
+vec = vec_svd
+
+W1, H1 = np.copy(W), np.copy(H)
+
+
+Z_svd2 = approx_SVD2(Z_sgd, i=3, r=5)
+RMSE(Z_svd2)
 
 # %% TODO Create matrix Z_perc: wypełnianie oceną odpowiadającą percentylem oceny filmu ocenie użytkownika
 
