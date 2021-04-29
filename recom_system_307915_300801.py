@@ -45,7 +45,7 @@ def fill_matrix(Z):
 
 # %% Algorithms 
 def approx_NMF(Z_, r = 10, **kwargs):
-    ''' Nonnegative Matrix Factorization; Return approximated matrix and log string;
+    ''' Nonnegative Matrix Factorization; Return approximated matrix and summary log string;
         Z_(nd.array) original matrix
         r (float) number of features '''
     model = NMF(n_components = r, init = 'random', random_state = 77)
