@@ -105,28 +105,30 @@ print('Creating the initial matrix...')
 # %% Create matrix Z_avg_user: fills matrix with an average rating of a user
 user_avgs = np.array(train.groupby('userId')['rating'].mean())
 Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
-Z_avg_user[entries] = filled_entries
 
 # %% Create matrix Z_avg_movie: fills matrix with an average rating of a movie and avg_rating for unrated movies
 movie_avgs = train.groupby('movieId')['rating'].mean()
 movie_row = np.repeat(avg_rating, d)
 for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
 Z_avg_movie = np.array([movie_row]*n)
-Z_avg_movie[entries] = filled_entries
 
 # %% Optimal weighted mean of Z_avg_user and Z_avg_movie
-# !!! MAKE RMSE QUICKER
 ps = np.arange(21)/20
-best_rmse = 100
+best_loss = 1000000
 best_p = 0
 for p in ps:
     Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
-    new = RMSE(Z_avg_user_movie)
-    if new < best_rmse: 
-        best_rmse = new
+    new = np.sum((Z_avg_user_movie[entries] - filled_entries)**2)
+    if new < best_loss: 
+        best_loss = new
         best_p = p
 p = best_p
 Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+
+# %% Filling matrices with training data
+Z_avg_user[entries] = filled_entries
+Z_avg_movie[entries] = filled_entries
+Z_avg_user_movie[entries] = filled_entries
 
 # %% Fills matrix with mean ratings of the most similar users.
 # Gives RMSE = 1.078 for Z_avg_user -> it's not used in the program
