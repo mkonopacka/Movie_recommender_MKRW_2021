@@ -2,7 +2,7 @@ import pandas as pd
 from sklearn.model_selection import train_test_split as tts
 import argparse
 
-if __name__ == '__main__':
+def parse_arguments():
     parser = argparse.ArgumentParser(description = 'Split csv file into training and test datasets')
     parser.add_argument('--src', help = 'source file', default = 'data/ratings.csv')
     parser.add_argument('--size', help = 'size of test dataset / size of source dataset', default = 0.1)
@@ -15,3 +15,6 @@ if __name__ == '__main__':
     train.to_csv(train_name, index = False)
     test.to_csv(test_name, index = False)
     print(f'Dataset split into files: {train_name}, {test_name}.')
+
+if __name__ == '__main__':
+    parse_arguments()

@@ -1,9 +1,11 @@
 # %% Import
 import argparse
+from os import close
 import numpy as np
 import pandas as pd
 from tqdm import tqdm 
 from sklearn.decomposition import NMF
+from datetime import datetime as dt
 
 # %% Parse arguments
 def parse_arguments():
@@ -42,110 +44,51 @@ def fill_matrix(Z):
     return
 
 # %% Algorithms 
-def approx_NMF(Z_, r = 10):
-    ''' Nonnegative Matrix Factorization; Return approximated matrix;
+def approx_NMF(Z_, r = 10, **kwargs):
+    ''' Nonnegative Matrix Factorization; Return approximated matrix and log string;
         Z_(nd.array) original matrix
         r (float) number of features '''
     model = NMF(n_components = r, init = 'random', random_state = 77)
     W = model.fit_transform(Z_)
     H = model.components_
-    return np.dot(W, H)
+    Z_approx = np.dot(W, H)
+    RMSE1 = RMSE(Z_)
+    RMSE2 = RMSE(Z_approx)
+    percent = 100*(RMSE1 - RMSE2)/RMSE1
+    log = f'NMF with i = {r} reduced RMSE by {percent:0.3f}.% from {RMSE1:0.3f} to {RMSE2:0.3f}'
+    return Z_approx, log
 
-def approx_SVD1(Z_, r = 3):
-    ''' Singular Value Decomposition; Return approximated matrix;
+def approx_SVD1(Z_, r = 3, **kwargs):
+    ''' Singular Value Decomposition; Return approximated matrix and summary log string;
         Z_(nd.array) original matrix
         r (float) number of features'''
     U, S, VT = np.linalg.svd(Z_, full_matrices = False)
     S = np.diag(S)
-    return U[:,:r] @ S[0:r,:r] @ VT[:r,:]
+    Z_approx = U[:,:r] @ S[0:r,:r] @ VT[:r,:]
+    RMSE1 = RMSE(Z_)
+    RMSE2 = RMSE(Z_approx)
+    percent = 100*(RMSE1 - RMSE2)/RMSE1
+    log = f'SVD1 with r = {r} reduced RMSE by {percent:0.3f}% from {RMSE1:0.3f} to {RMSE2:0.3f}'
+    return Z_approx, log
 
-def approx_SVD2(Z_, i = 3, r = 5):
-    ''' SVD with iterations; Return approximated matrix
+def approx_SVD2(Z_, i = 3, r = 5, **kwargs):
+    ''' SVD with iterations; Return approximated matrix and summary log string
         Z_(nd.array) original matrix
         r (float) number of features
         i (int) number of iterations'''
     Z_approx = np.copy(Z_)
     for j in tqdm(range(i)):
-        Z_approx = approx_SVD1(Z_approx, r)
+        Z_approx, log = approx_SVD1(Z_approx, r)
         if j != i-1: 
             Z_approx[entries] = filled_entries
-    return Z_approx
-    
-def test_alg(Z_, alg, r = 5, i = 3, log = False):
-    ''' Runs test of specified algorithm alg starting with given matrix Z_ and returns obtained RMSE 
-    r and i - parameters for alg
-    '''
-    if log: print('Building a model...')
-    if alg == 'NMF': Z_approx = approx_NMF(Z_, r)
-    if alg == 'SVD1': Z_approx = approx_SVD1(Z_, r)
-    if alg == 'SVD2': Z_approx = approx_SVD2(Z_, i, r)
-    if log: print('Model finished.')
-    result = RMSE(Z_approx)
-    if log: print(f"RMSE for matrix Z' (Z approximated with {alg} with rank = {r}): {result}")
-    if alg == 'SVD2': print('Number of iterations: ', i)
-    return result
+    RMSE1 = RMSE(Z_)
+    RMSE2 = RMSE(Z_approx)
+    percent = 100*(RMSE1 - RMSE2)/RMSE1
+    log = f'SVD2 with r = {r}, i = {i} reduced RMSE by {percent:0.3f}% from {RMSE1:0.3f} to {RMSE2:0.3f}'
+    return Z_approx, log
 
-# %% Setup
-train_movies = train.movieId.unique()
-test_movies = test.movieId.unique()
-all_movies = sorted(np.concatenate((train_movies, test_movies[~ np.isin(test_movies, train_movies)])))
-d = len(all_movies) # 9724
-train_users = train.userId.unique()
-test_users = test.userId.unique()
-all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_users)]))
-n = len(all_users) # 610
-avg_rating = np.mean(train.rating)
-Z_zero = np.full((n,d), 0, dtype = np.float)
-print('Reading training data: ')
-fill_matrix(Z_zero)
-entries = Z_zero > 0
-filled_entries = Z_zero[entries]
-print('Creating the initial matrix...')
-
-# %% Create matrix Z_avg_user: fills matrix with an average rating of a user
-user_avgs = np.array(train.groupby('userId')['rating'].mean())
-Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
-Z_avg_user[entries] = filled_entries
-
-# %% Create matrix Z_avg_movie: fills matrix with an average rating of a movie and avg_rating for unrated movies
-movie_avgs = train.groupby('movieId')['rating'].mean()
-movie_row = np.repeat(avg_rating, d)
-for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
-Z_avg_movie = np.array([movie_row]*n)
-Z_avg_movie[entries] = filled_entries
-
-# %% Optimal weighted mean of Z_avg_user and Z_avg_movie
-# !!! MAKE RMSE QUICKER
-ps = np.arange(21)/20
-best_rmse = 100
-best_p = 0
-for p in ps:
-    Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
-    new = RMSE(Z_avg_user_movie)
-    if new < best_rmse: 
-        best_rmse = new
-        best_p = p
-p = best_p
-Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
-
-# %% Fills matrix with mean ratings of the most similar users.
-# Gives RMSE = 1.078 for Z_avg_user -> it's not used in the program
-def close_users(Z_, percent = 0.15):
-    Z_close_users = np.full((n,d), 0)
-    for i in tqdm(range(n)):
-        user = Z_[i,]
-        Z_user = (Z_ - user)**2
-        distances = Z_user.sum(axis=1)
-        q = np.quantile(distances, percent)
-        indexes = distances <= q
-        enum = np.arange(len(distances))
-        indexes = enum[indexes]
-        close_users = Z_[indexes]
-        prediction = close_users.mean(axis=0)
-        Z_close_users[i,] = prediction
-    return Z_close_users
-
-# %% SGD
+def approx_SGD(**kwargs):
+    pass
 
 def vec_to_mat(x):
     '''Takes a vector of parameters x of the loss function f and converts it to matrix W x H
@@ -189,14 +132,76 @@ def SGD(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
             x = x - (l_rate/batch_size)*grad
     return x
 
+# %% Setup
+train_movies = train.movieId.unique()
+test_movies = test.movieId.unique()
+all_movies = sorted(np.concatenate((train_movies, test_movies[~ np.isin(test_movies, train_movies)])))
+d = len(all_movies) # 9724
+train_users = train.userId.unique()
+test_users = test.userId.unique()
+all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_users)]))
+n = len(all_users) # 610
+avg_rating = np.mean(train.rating)
+Z_zero = np.full((n,d), 0, dtype = np.float)
+print('Reading training data ... ')
+fill_matrix(Z_zero)
+entries = Z_zero > 0
+filled_entries = Z_zero[entries]
+print('Creating the initial matrix ...')
+
+# %% Create matrix Z_avg_user: fills matrix with an average rating of a user
+user_avgs = np.array(train.groupby('userId')['rating'].mean())
+Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
+Z_avg_user[entries] = filled_entries
+
+# %% Create matrix Z_avg_movie: fills matrix with an average rating of a movie and avg_rating for unrated movies
+movie_avgs = train.groupby('movieId')['rating'].mean()
+movie_row = np.repeat(avg_rating, d)
+for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
+Z_avg_movie = np.array([movie_row]*n)
+Z_avg_movie[entries] = filled_entries
+
+# %% Create matrix Z_close_users: fills matrix with mean ratings of the most similar users
+def close_users(Z_, percent = 0.1):
+    Z_close_users = np.full((n,d), 0)
+    for i in tqdm(range(n)):
+        user = Z_[i,]
+        Z_user = (Z_ - user)**2
+        distances = Z_user.sum(axis=1)
+        q = np.quantile(distances, percent)
+        indexes = distances <= q
+        enum = np.arange(len(distances))
+        indexes = enum[indexes]
+        close_users = Z_[indexes]
+        prediction = close_users.mean(axis=0)
+        Z_close_users[i,] = prediction
+    return Z_close_users
+
+Z_close_users = close_users(Z_avg_user)
+# %% Optimal weighted mean of Z_avg_user and Z_avg_movie
+# TODO !!! MAKE RMSE QUICKER
+# ps = np.arange(21)/20
+# best_rmse = 100
+# best_p = 0
+# for p in ps:
+#     Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+#     new = RMSE(Z_avg_user_movie)
+#     if new < best_rmse: 
+#         best_rmse = new
+#         best_p = p
+# p = best_p
+p = 0.6
+Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+
 # %% Program
 if __name__=='__main__':
-    if args.alg == 'SGD':
-        r = 5
-        x0 = np.full(r*(n+d), 0.825)
-        vec = SGD(x0, batch_size=225, l_rate=0.02, n_epochs=15)
-        Z_sgd = vec_to_mat(vec)
-        result = RMSE(Z_sgd)
-    else:
-        result = test_alg(Z_avg_user_movie, args.alg, r = 10, i = 3, log = True)
-    np.savetxt(f'{args.result_file}', [result])
+    pass
+    # if args.alg == 'SGD':
+    #     r = 5
+    #     x0 = np.full(r*(n+d), 0.825)
+    #     vec = SGD(x0, batch_size=225, l_rate=0.02, n_epochs=15)
+    #     Z_sgd = vec_to_mat(vec)
+    #     result = RMSE(Z_sgd)
+    # else:
+    #     result = run_test(Z_avg_user_movie, args.alg, r = 10, i = 3, log = True)
+    # np.savetxt(f'{args.result_file}', [result])
