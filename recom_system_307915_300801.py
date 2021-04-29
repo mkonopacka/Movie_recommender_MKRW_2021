@@ -6,6 +6,8 @@ import pandas as pd
 from tqdm import tqdm 
 from sklearn.decomposition import NMF
 from datetime import datetime as dt
+from split_dataset import parse_arguments
+from time import perf_counter as time
 
 # %% Parse arguments
 def parse_arguments():
@@ -87,12 +89,19 @@ def approx_SVD2(Z_, i = 3, r = 5, **kwargs):
     log = f'SVD2 with r = {r}, i = {i} reduced RMSE by {percent:0.3f}% from {RMSE1:0.3f} to {RMSE2:0.3f}'
     return Z_approx, log
 
-def approx_SGD(**kwargs):
-    pass
+def approx_SGD(n = 610, d = 9724, r = 5, l_rate = 0.02, bs = 1, **kwargs):
+    ''' n,d: dimensions of train matrix '''
+    x0 = np.full(r * (n + d), 0.825)
+    vec = SGD(x0, batch_size = bs, l_rate = l_rate, n_epochs = 20)
+    Z_approx = vec_to_mat(vec)
+    RMSE2 = RMSE(Z_approx)
+    log = f'SGD with r = {r}, alpha = {l_rate}, bs = {bs} result: {RMSE2:0.3f}'
+    return Z_approx, log
 
-def vec_to_mat(x):
-    '''Takes a vector of parameters x of the loss function f and converts it to matrix W x H
-    '''
+def vec_to_mat(x, n = 610, r = 5, d = 9724):
+    ''' Takes a vector of parameters x of the loss function f and converts it to matrix W @ H 
+        n: ...
+        r,d: shape of ... '''
     W = x[0 : n*r]
     W = W.reshape((n, r))
     H = x[n*r : r*(n+d)]
@@ -100,24 +109,23 @@ def vec_to_mat(x):
     return W @ H
 
 def loss(x):
-    '''Loss function used by SGD
-    '''
+    ''' Loss function used by SGD (assumes that the matrix is approximated with product of W,H matrices) 
+        x: vector of parameters (subsequent entries of W and H) '''
     WH = vec_to_mat(x)
     vec_wh = WH[entries]
     vec = (filled_entries - vec_wh)**2
     return np.sum(vec)
 
-def der_loss(x, ks, h):
-    '''Approximates the derivative of the loss function with respect to paramters in ks
-    '''
+def loss_grad(x, ks, h = 0.01):
+    ''' Approximates the derivative of the loss function with respect to chosen parameters
+        ks: order numbers of partials '''
     xp, xm = np.copy(x), np.copy(x)
     xp[ks] += h
     xm[ks] -= h
     return (loss(xp) - loss(xm))/(2*h)
-            
-def SGD(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
-    '''Runs SGD
-    '''
+
+def SGD(x0, loss_grad = loss_grad, batch_size = 1, l_rate = 0.01, n_epochs = 50):
+    ''' Stochastic Gradient Descent; returns x that minimizes loss function '''
     N = len(x0)
     n_iter = N//batch_size
     indexes = np.arange(N)
@@ -128,7 +136,7 @@ def SGD(x0, batch_size=1, l_rate=0.01, h=0.01, n_epochs=50):
             ib = i*batch_size
             batch_ids = indexes[ib : ib + batch_size]
             grad = np.full(N, 0, dtype = np.float)
-            grad[batch_ids] += der_loss(x, batch_ids, h)
+            grad[batch_ids] += loss_grad(x, batch_ids)
             x = x - (l_rate/batch_size)*grad
     return x
 
@@ -143,8 +151,10 @@ all_users = np.concatenate((train_users, test_users[~ np.isin(test_users, train_
 n = len(all_users) # 610
 avg_rating = np.mean(train.rating)
 Z_zero = np.full((n,d), 0, dtype = np.float)
+Z_nan = np.full((n,d), np.nan, dtype = np.float)
 print('Reading training data ... ')
 fill_matrix(Z_zero)
+non_nan_train = np.argwhere(~np.isnan(Z_nan)) # list of pairs of indices
 entries = Z_zero > 0
 filled_entries = Z_zero[entries]
 print('Creating the initial matrix ...')
@@ -177,25 +187,25 @@ def close_users(Z_, percent = 0.1):
         Z_close_users[i,] = prediction
     return Z_close_users
 
-Z_close_users = close_users(Z_avg_user)
+# Z_close_users = close_users(Z_avg_user)
 # %% Optimal weighted mean of Z_avg_user and Z_avg_movie
-# TODO !!! MAKE RMSE QUICKER
-# ps = np.arange(21)/20
-# best_rmse = 100
-# best_p = 0
-# for p in ps:
-#     Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
-#     new = RMSE(Z_avg_user_movie)
-#     if new < best_rmse: 
-#         best_rmse = new
-#         best_p = p
-# p = best_p
 p = 0.6
 Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
 
+def run_test(alg, mat_name = '_', **kwargs):
+    ''' Run test on algorithm `alg` with parameters passed as keyword arguments; Returns obtained RMSE '''
+    algs = {"NMF": approx_NMF,"SVD1": approx_SVD1,"SVD2": approx_SVD2,"SGD": approx_SGD}
+    print('Building a model ...')
+    start = time()
+    Z_approx, log = algs[alg](**kwargs)
+    result = RMSE(Z_approx)
+    stop = time()
+    print(f'For matrix {mat_name} ' + log + f' (Total time: {stop - start})', file = open('results_log.txt', 'a')) # append mode
+    return result
+
 # %% Program
 if __name__=='__main__':
-    pass
+    result = run_test(args.alg, Z_ = Z_avg_user_movie)
     # if args.alg == 'SGD':
     #     r = 5
     #     x0 = np.full(r*(n+d), 0.825)
@@ -204,4 +214,5 @@ if __name__=='__main__':
     #     result = RMSE(Z_sgd)
     # else:
     #     result = run_test(Z_avg_user_movie, args.alg, r = 10, i = 3, log = True)
-    # np.savetxt(f'{args.result_file}', [result])
+    with open(f'{args.result_file}', 'w') as f_out: 
+        f_out.write(str(result))

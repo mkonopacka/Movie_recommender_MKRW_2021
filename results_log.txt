@@ -10,3 +10,7 @@ For matrix Z_avg_user_movie SVD2 with r = 5, i = 3 reduced RMSE by 2.677% from 0
 For matrix Z_avg_user SVD2 with r = 5, i = 3 reduced RMSE by 5.333% from 0.936 to 0.886 (Total time: 12.807840436000333)
 For matrix Z_avg_movie SVD2 with r = 5, i = 3 reduced RMSE by 4.378% from 0.978 to 0.935 (Total time: 14.155927030000385)
 For matrix Z_close_users SVD2 with r = 5, i = 3 reduced RMSE by 12.456% from 1.083 to 0.948 (Total time: 12.255816378999953)
+For matrix _ NMF with i = 10 reduced RMSE by 1.054.% from 0.895 to 0.885 (Total time: 8.783295504999842)
+For matrix _ NMF with i = 10 reduced RMSE by 1.054.% from 0.895 to 0.885 (Total time: 6.775970222999604)
+For matrix _ NMF with i = 10 reduced RMSE by 1.054.% from 0.895 to 0.885 (Total time: 7.804409443000623)
+For matrix _ NMF with i = 10 reduced RMSE by 1.054.% from 0.895 to 0.885 (Total time: 6.700063473999762)
