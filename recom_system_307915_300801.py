@@ -89,7 +89,7 @@ def approx_SVD2(Z_, i = 3, r = 5, **kwargs):
     log = f'SVD2 with r = {r}, i = {i} reduced RMSE by {percent:0.3f}% from {RMSE1:0.3f} to {RMSE2:0.3f}'
     return Z_approx, log
 
-def approx_SGD(n = 610, d = 9724, r = 5, l_rate = 0.02, bs = 1, **kwargs):
+def approx_SGD(n = 610, d = 9724, r = 5, l_rate = 0.01, bs = 225, **kwargs):
     ''' n,d: dimensions of train matrix '''
     x0 = np.full(r * (n + d), 0.825)
     vec = SGD(x0, batch_size = bs, l_rate = l_rate, n_epochs = 20)
@@ -124,7 +124,7 @@ def loss_grad(x, ks, h = 0.01):
     xm[ks] -= h
     return (loss(xp) - loss(xm))/(2*h)
 
-def SGD(x0, loss_grad = loss_grad, batch_size = 1, l_rate = 0.01, n_epochs = 50):
+def SGD(x0, loss_grad = loss_grad, batch_size = 255, l_rate = 0.01, n_epochs = 10):
     ''' Stochastic Gradient Descent; returns x that minimizes loss function '''
     N = len(x0)
     n_iter = N//batch_size
@@ -162,14 +162,12 @@ print('Creating the initial matrix ...')
 # %% Create matrix Z_avg_user: fills matrix with an average rating of a user
 user_avgs = np.array(train.groupby('userId')['rating'].mean())
 Z_avg_user = np.repeat(user_avgs, d).reshape(n,d)
-Z_avg_user[entries] = filled_entries
 
 # %% Create matrix Z_avg_movie: fills matrix with an average rating of a movie and avg_rating for unrated movies
 movie_avgs = train.groupby('movieId')['rating'].mean()
 movie_row = np.repeat(avg_rating, d)
 for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
 Z_avg_movie = np.array([movie_row]*n)
-Z_avg_movie[entries] = filled_entries
 
 # %% Create matrix Z_close_users: fills matrix with mean ratings of the most similar users
 def close_users(Z_, percent = 0.1):
@@ -189,8 +187,22 @@ def close_users(Z_, percent = 0.1):
 
 # Z_close_users = close_users(Z_avg_user)
 # %% Optimal weighted mean of Z_avg_user and Z_avg_movie
-p = 0.6
+ps = np.arange(21)/20
+best_loss = 1000000
+best_p = 0
+for p in ps:
+    Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+    new = np.sum((Z_avg_user_movie[entries] - filled_entries)**2)
+    if new < best_loss: 
+        best_loss = new
+        best_p = p
+p = best_p
 Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+
+# %% Fill matrices with training data# %% Filling matrices with training data
+Z_avg_user[entries] = filled_entries
+Z_avg_movie[entries] = filled_entries
+Z_avg_user_movie[entries] = filled_entries
 
 def run_test(alg, mat_name = '_', **kwargs):
     ''' Run test on algorithm `alg` with parameters passed as keyword arguments; Returns obtained RMSE '''
@@ -201,18 +213,14 @@ def run_test(alg, mat_name = '_', **kwargs):
     result = RMSE(Z_approx)
     stop = time()
     print(f'For matrix {mat_name} ' + log + f' (Total time: {stop - start})', file = open('results_log.txt', 'a')) # append mode
-    return result
+    results = {
+        "matrix_name" : mat_name,
+        "RMSE1" : RMSE
+    }
+    return results
 
 # %% Program
 if __name__=='__main__':
-    result = run_test(args.alg, Z_ = Z_avg_user_movie)
-    # if args.alg == 'SGD':
-    #     r = 5
-    #     x0 = np.full(r*(n+d), 0.825)
-    #     vec = SGD(x0, batch_size=225, l_rate=0.02, n_epochs=15)
-    #     Z_sgd = vec_to_mat(vec)
-    #     result = RMSE(Z_sgd)
-    # else:
-    #     result = run_test(Z_avg_user_movie, args.alg, r = 10, i = 3, log = True)
+    result = run_test(args.alg, Z_ = Z_avg_user_movie)['RMSE']
     with open(f'{args.result_file}', 'w') as f_out: 
         f_out.write(str(result))
