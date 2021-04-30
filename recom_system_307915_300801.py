@@ -6,7 +6,6 @@ import pandas as pd
 from tqdm import tqdm 
 from sklearn.decomposition import NMF
 from datetime import datetime as dt
-from split_dataset import parse_arguments
 from time import perf_counter as time
 
 # %% Parse arguments
