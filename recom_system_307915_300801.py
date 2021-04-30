@@ -57,10 +57,10 @@ def approx_NMF(Z_, r = 10, **kwargs):
     RMSE1 = RMSE(Z_)
     RMSE2 = RMSE(Z_approx)
     percent = 100*(RMSE1 - RMSE2)/RMSE1
-    log = f'NMF with i = {r} reduced RMSE by {percent:0.3f}.% from {RMSE1:0.3f} to {RMSE2:0.3f}'
+    log = f'NMF with r = {r} reduced RMSE by {percent:0.3f}.% from {RMSE1:0.3f} to {RMSE2:0.3f}'
     return Z_approx, log
 
-def approx_SVD1(Z_, r = 3, **kwargs):
+def approx_SVD1(Z_, r = 5, **kwargs):
     ''' Singular Value Decomposition; Return approximated matrix and summary log string;
         Z_(nd.array) original matrix
         r (float) number of features'''
@@ -73,7 +73,7 @@ def approx_SVD1(Z_, r = 3, **kwargs):
     log = f'SVD1 with r = {r} reduced RMSE by {percent:0.3f}% from {RMSE1:0.3f} to {RMSE2:0.3f}'
     return Z_approx, log
 
-def approx_SVD2(Z_, i = 3, r = 5, **kwargs):
+def approx_SVD2(Z_, i = 10, r = 3, **kwargs):
     ''' SVD with iterations; Return approximated matrix and summary log string
         Z_(nd.array) original matrix
         r (float) number of features
@@ -98,6 +98,19 @@ def approx_SGD(n = 610, d = 9724, r = 5, l_rate = 0.01, bs = 225, **kwargs):
     log = f'SGD with r = {r}, alpha = {l_rate}, bs = {bs} result: {RMSE2:0.3f}'
     return Z_approx, log
 
+def approx_NMF2_SVD2(Z_, r = 5, i = 5, **kwargs):
+    Z_approx = np.copy(Z_)
+    RMSE1 = RMSE(Z_)
+    for j in tqdm(range(i)):
+        Z_approx, log = approx_NMF(Z_approx, r)
+        if j != i-1: 
+            Z_approx[entries] = filled_entries
+    Z_approx, log = approx_SVD2(Z_approx, i, r)
+    RMSE2 = RMSE(Z_approx)
+    percent = 100*(RMSE1 - RMSE2)/RMSE1
+    log = f'NMF2_SVD2 with r = {r}, i = {i} reduced RMSE by {percent:0.3f}% from {RMSE1:0.3f} to {RMSE2:0.3f}'
+    return Z_approx, log
+
 def vec_to_mat(x, n = 610, r = 5, d = 9724):
     ''' Takes a vector of parameters x of the loss function f and converts it to matrix W @ H 
         n: ...
@@ -116,7 +129,7 @@ def loss(x):
     vec = (filled_entries - vec_wh)**2
     return np.sum(vec)
 
-def loss_grad(x, ks, h = 0.01):
+def der_loss(x, ks, h = 0.01):
     ''' Approximates the derivative of the loss function with respect to chosen parameters
         ks: order numbers of partials '''
     xp, xm = np.copy(x), np.copy(x)
@@ -124,7 +137,7 @@ def loss_grad(x, ks, h = 0.01):
     xm[ks] -= h
     return (loss(xp) - loss(xm))/(2*h)
 
-def SGD(x0, loss_grad = loss_grad, batch_size = 255, l_rate = 0.01, n_epochs = 10):
+def SGD(x0, der_loss = der_loss, batch_size = 255, l_rate = 0.01, n_epochs = 10):
     ''' Stochastic Gradient Descent; returns x that minimizes loss function '''
     N = len(x0)
     n_iter = N//batch_size
@@ -136,7 +149,7 @@ def SGD(x0, loss_grad = loss_grad, batch_size = 255, l_rate = 0.01, n_epochs = 1
             ib = i*batch_size
             batch_ids = indexes[ib : ib + batch_size]
             grad = np.full(N, 0, dtype = np.float)
-            grad[batch_ids] += loss_grad(x, batch_ids)
+            grad[batch_ids] += der_loss(x, batch_ids)
             x = x - (l_rate/batch_size)*grad
     return x
 
@@ -169,6 +182,24 @@ movie_row = np.repeat(avg_rating, d)
 for id, rating in movie_avgs.iteritems(): movie_row[all_movies.index(id)] = rating
 Z_avg_movie = np.array([movie_row]*n)
 
+# %% Optimal weighted mean of Z_avg_user and Z_avg_movie
+ps = np.arange(21)/20
+best_loss = 1000000
+best_p = 0
+for p in ps:
+    Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+    new = np.sum((Z_avg_user_movie[entries] - filled_entries)**2)
+    if new < best_loss: 
+        best_loss = new
+        best_p = p
+p = best_p
+Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
+
+# %% Fill matrices with training data
+Z_avg_user[entries] = filled_entries
+Z_avg_movie[entries] = filled_entries
+Z_avg_user_movie[entries] = filled_entries
+
 # %% Create matrix Z_close_users: fills matrix with mean ratings of the most similar users
 def close_users(Z_, percent = 0.1):
     Z_close_users = np.full((n,d), 0)
@@ -186,41 +217,25 @@ def close_users(Z_, percent = 0.1):
     return Z_close_users
 
 # Z_close_users = close_users(Z_avg_user)
-# %% Optimal weighted mean of Z_avg_user and Z_avg_movie
-ps = np.arange(21)/20
-best_loss = 1000000
-best_p = 0
-for p in ps:
-    Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
-    new = np.sum((Z_avg_user_movie[entries] - filled_entries)**2)
-    if new < best_loss: 
-        best_loss = new
-        best_p = p
-p = best_p
-Z_avg_user_movie = p*Z_avg_user + (1-p)*Z_avg_movie
-
-# %% Fill matrices with training data# %% Filling matrices with training data
-Z_avg_user[entries] = filled_entries
-Z_avg_movie[entries] = filled_entries
-Z_avg_user_movie[entries] = filled_entries
 
 def run_test(alg, mat_name = '_', **kwargs):
     ''' Run test on algorithm `alg` with parameters passed as keyword arguments; Returns obtained RMSE '''
-    algs = {"NMF": approx_NMF,"SVD1": approx_SVD1,"SVD2": approx_SVD2,"SGD": approx_SGD}
+    algs = {"NMF": approx_NMF,
+    "SVD1": approx_SVD1,
+    "SVD2": approx_SVD2,
+    "SGD": approx_SGD, 
+    "NMF2_SVD2": approx_NMF2_SVD2}
     print('Building a model ...')
     start = time()
     Z_approx, log = algs[alg](**kwargs)
     result = RMSE(Z_approx)
     stop = time()
     print(f'For matrix {mat_name} ' + log + f' (Total time: {stop - start})', file = open('results_log.txt', 'a')) # append mode
-    results = {
-        "matrix_name" : mat_name,
-        "RMSE1" : RMSE
-    }
-    return results
+    return result
 
 # %% Program
 if __name__=='__main__':
-    result = run_test(args.alg, Z_ = Z_avg_user_movie)['RMSE']
+    result = run_test(args.alg, Z_ = Z_avg_user_movie)
     with open(f'{args.result_file}', 'w') as f_out: 
         f_out.write(str(result))
+    print('Finished.')
